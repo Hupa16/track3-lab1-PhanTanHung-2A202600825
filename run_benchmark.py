@@ -9,12 +9,23 @@ from src.reflexion_lab.utils import load_dataset, save_jsonl
 app = typer.Typer(add_completion=False)
 
 @app.command()
-def main(dataset: str = "data/hotpot_mini.json", out_dir: str = "outputs/sample_run", reflexion_attempts: int = 3) -> None:
+def main(dataset: str = "data/hotpot_golden.json", out_dir: str = "outputs/golden_run", reflexion_attempts: int = 3) -> None:
     examples = load_dataset(dataset)
     react = ReActAgent()
     reflexion = ReflexionAgent(max_attempts=reflexion_attempts)
-    react_records = [react.run(example) for example in examples]
-    reflexion_records = [reflexion.run(example) for example in examples]
+    import concurrent.futures
+    from tqdm import tqdm
+    
+    react_records = []
+    reflexion_records = []
+    
+    print("Running ReAct Agent...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        react_records = list(tqdm(executor.map(react.run, examples), total=len(examples)))
+        
+    print("Running Reflexion Agent...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        reflexion_records = list(tqdm(executor.map(reflexion.run, examples), total=len(examples)))
     all_records = react_records + reflexion_records
     out_path = Path(out_dir)
     save_jsonl(out_path / "react_runs.jsonl", react_records)

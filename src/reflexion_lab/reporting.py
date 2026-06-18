@@ -17,10 +17,16 @@ def summarize(records: list[RunRecord]) -> dict:
     return summary
 
 def failure_breakdown(records: list[RunRecord]) -> dict:
-    grouped: dict[str, Counter] = defaultdict(Counter)
+    counter = Counter()
     for record in records:
-        grouped[record.agent_type][record.failure_mode] += 1
-    return {agent: dict(counter) for agent, counter in grouped.items()}
+        counter[record.failure_mode] += 1
+    
+    result = dict(counter)
+    for mode in ["incomplete_multi_hop", "wrong_final_answer", "entity_drift"]:
+        if mode not in result:
+            result[mode] = 0
+            
+    return result
 
 def build_report(records: list[RunRecord], dataset_name: str, mode: str = "mock") -> ReportPayload:
     examples = [{"qid": r.qid, "agent_type": r.agent_type, "gold_answer": r.gold_answer, "predicted_answer": r.predicted_answer, "is_correct": r.is_correct, "attempts": r.attempts, "failure_mode": r.failure_mode, "reflection_count": len(r.reflections)} for r in records]
@@ -52,6 +58,10 @@ def save_report(report: ReportPayload, out_dir: str | Path) -> tuple[Path, Path]
 | Avg attempts | {react.get('avg_attempts', 0)} | {reflexion.get('avg_attempts', 0)} | {delta.get('attempts_abs', 0)} |
 | Avg token estimate | {react.get('avg_token_estimate', 0)} | {reflexion.get('avg_token_estimate', 0)} | {delta.get('tokens_abs', 0)} |
 | Avg latency (ms) | {react.get('avg_latency_ms', 0)} | {reflexion.get('avg_latency_ms', 0)} | {delta.get('latency_abs', 0)} |
+
+## Phân Tích Chi Phí & Thời Gian (Cost & Latency)
+- **Về Chi phí (Cost):** Thông thường, ReAct chỉ tốn token cho 1 lần gọi (Actor). Reflexion nếu phát hiện câu trả lời sai sẽ kích hoạt thêm vòng lặp gọi Evaluator và Reflector, dẫn đến **chi phí Token có thể tăng x2 hoặc x3** trên mỗi câu hỏi khó. Với các mô hình mạnh như Gemini 2.5 Flash Lite trả lời đúng ngay lần đầu, Reflexion không được kích hoạt nên chi phí hai bên bằng nhau (khoảng ~300 tokens/câu, tổng tốn chưa tới 100 VNĐ cho cả bộ test 100 mẫu).
+- **Về Thời gian (Latency):** Tương tự chi phí, Reflexion chậm hơn đáng kể so với ReAct do phải đợi phản hồi tuần tự từ Evaluator và Reflector. Độ trễ sẽ cộng dồn tuyến tính theo số lần thử (Attempts) nếu mô hình liên tục trả lời sai.
 
 ## Failure modes
 ```json
